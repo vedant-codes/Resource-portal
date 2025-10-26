@@ -4,6 +4,11 @@ import { Inter, Space_Grotesk } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 
+// NextAuth imports
+import NextAuthSessionProvider from "@/components/SessionProvider"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/app/api/auth/[...nextauth]/route"
+
 const inter = Inter({
   subsets: ["latin"],
   display: "swap",
@@ -22,11 +27,14 @@ export const metadata: Metadata = {
   generator: "v0.app",
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  // Get session server-side
+  const session = await getServerSession(authOptions)
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -39,9 +47,16 @@ html {
         `}</style>
       </head>
       <body className={`${inter.variable} ${spaceGrotesk.variable} antialiased`}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          {children}
-        </ThemeProvider>
+        <NextAuthSessionProvider session={session}>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            {children}
+          </ThemeProvider>
+        </NextAuthSessionProvider>
       </body>
     </html>
   )
