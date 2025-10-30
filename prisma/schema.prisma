@@ -1,12 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
-  output   = "../lib/generated/prisma"
+  provider = "prisma-client-js"
+  output   = "./generated/prisma/client"
 }
 
 datasource db {
@@ -15,51 +9,168 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?   // store hashed password for credentials provider
-  lastLogin     DateTime? // updated on each sign in
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  UserID            Int       @id @default(autoincrement())
+  Name              String
+  Email             String    @unique
+  PasswordHash      String
+  Role              String
+  Year              Int?
+  Department        String?
+  ProfilePicture    String?
+  Bio               String?
+  JoinedDate        DateTime  @default(now())
+  LastLogin         DateTime?
+  ContributionScore Int       @default(0)
+  Status            String?
 
-  accounts      Account[]
-  sessions      Session[]
+  // Relations
+  resources         Resource[]
+  books             Book[]
+  transactions      BookTransaction[]
+  forums            Forum[]
+  discussions       Discussion[]
+  requests          Request[]
+  ratings           Rating[]
+  flags             Flag[]
 }
 
-model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String?
-  access_token       String?
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?
-  session_state      String?
+model Course {
+  CourseID     Int        @id @default(autoincrement())
+  CourseName   String
+  CourseCode   String     @unique
+  Department   String?
+  Year         Int?
+  Semester     Int?
+  Description  String?
+  Instructor   String?
+  Status       String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
+  // Relations
+  resources    Resource[]
+  forums       Forum[]
+  requests     Request[]
 }
 
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Resource {
+  ResourceID     Int        @id @default(autoincrement())
+  Title          String
+  Description    String?
+  FilePath       String
+  FileType       String?
+  FileSize       Int?
+  UploadDate     DateTime   @default(now())
+  Version        Int?       @default(1)
+  DownloadCount  Int?       @default(0)
+  Status         String?
+  LastModified   DateTime?  @updatedAt
+  UserID         Int
+  CourseID       Int
+
+  // Relations
+  user           User       @relation(fields: [UserID], references: [UserID])
+  course         Course     @relation(fields: [CourseID], references: [CourseID])
+  tags           ResourceTag[]
+  ratings        Rating[]
+  flags          Flag[]
 }
 
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
+model ResourceTag {
+  ResourceID Int
+  Tag        String
 
-  @@unique([identifier, token])
+  resource   Resource @relation(fields: [ResourceID], references: [ResourceID])
+
+  @@id([ResourceID, Tag])
+}
+
+model Book {
+  BookID            Int       @id @default(autoincrement())
+  Title             String
+  Author            String
+  Edition           String?
+  Condition         String?
+  AvailabilityStatus String?
+  ListedDate        DateTime  @default(now())
+  UserID            Int
+
+  user              User      @relation(fields: [UserID], references: [UserID])
+  transactions      BookTransaction[]
+}
+
+model BookTransaction {
+  TransactionID   Int       @id @default(autoincrement())
+  Status          String?
+  RequestDate     DateTime  @default(now())
+  ApprovalDate    DateTime?
+  ReturnDate      DateTime?
+  TransactionType String?
+  UserID          Int
+  BookID          Int
+
+  user            User @relation(fields: [UserID], references: [UserID])
+  book            Book @relation(fields: [BookID], references: [BookID])
+}
+
+model Forum {
+  ForumID     Int       @id @default(autoincrement())
+  Title       String
+  CreatedDate DateTime  @default(now())
+  Status      String?
+  UserID      Int
+  CourseID    Int
+
+  user        User   @relation(fields: [UserID], references: [UserID])
+  course      Course @relation(fields: [CourseID], references: [CourseID])
+  discussions Discussion[]
+}
+
+model Discussion {
+  DiscussionID Int       @id @default(autoincrement())
+  Content      String
+  Attachment   String?
+  Timestamp    DateTime  @default(now())
+  Status       String?
+  UserID       Int
+  ForumID      Int
+
+  user         User   @relation(fields: [UserID], references: [UserID])
+  forum        Forum  @relation(fields: [ForumID], references: [ForumID])
+}
+
+model Request {
+  RequestID     Int       @id @default(autoincrement())
+  Description   String
+  Status        String?
+  CreatedDate   DateTime  @default(now())
+  FulfilledDate DateTime?
+  UserID        Int
+  CourseID      Int
+
+  user          User   @relation(fields: [UserID], references: [UserID])
+  course        Course @relation(fields: [CourseID], references: [CourseID])
+}
+
+model Rating {
+  UserID      Int
+  ResourceID  Int
+  RatingValue Int
+  Comment     String?
+  Date        DateTime @default(now())
+
+  user        User     @relation(fields: [UserID], references: [UserID])
+  resource    Resource @relation(fields: [ResourceID], references: [ResourceID])
+
+  @@id([UserID, ResourceID])
+}
+
+model Flag {
+  FlagID      Int       @id @default(autoincrement())
+  Reason      String
+  Status      String?
+  Date        DateTime  @default(now())
+  UserID      Int
+  ResourceID  Int
+
+  user        User     @relation(fields: [UserID], references: [UserID])
+  resource    Resource @relation(fields: [ResourceID], references: [ResourceID])
 }
