@@ -2,7 +2,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -15,35 +15,42 @@ export default function LoginForm() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const { data: session } = useSession();
+  // <-- NO options passed here (TypeScript happy)
+  const { data: session, status } = useSession();
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
 
-  // Redirect if already logged in
-  if (session) {
-    if (typeof window !== "undefined") router.replace("/dashboard");
-    return <div className="min-h-screen flex items-center justify-center">Redirecting…</div>;
-  }
-
-  // Handle email/password login via NextAuth Credentials (if set up)
-  async function handleEmailLogin() {
-    const result = await signIn("credentials", {
-      redirect: false,
-      email,
-      password,
-    });
-
-    if (result?.error) {
-      alert("Invalid email or password");
-    } else {
+  // Redirect inside useEffect to avoid render-time navigation loops
+  useEffect(() => {
+    if (session) {
       router.replace("/dashboard");
+    }
+  }, [session, router]);
+
+  async function handleEmailLogin() {
+    setLoading(true);
+    try {
+      const result = await signIn("credentials", {
+        redirect: false,
+        email,
+        password,
+      });
+      if (result && (result as any).error) {
+        alert("Invalid email or password");
+      } else {
+        router.replace("/dashboard");
+      }
+    } catch (err) {
+      console.error("Login error:", err);
+      alert("Login failed. Check console.");
+    } finally {
+      setLoading(false);
     }
   }
 
-  // Google OAuth login
-  async function handleGoogleSignIn() {
-    await signIn("google", { callbackUrl: "/dashboard" });
+  function handleGoogleSignIn() {
+    signIn("google", { callbackUrl: "/dashboard" });
   }
-
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden">
       {/* Background */}
@@ -185,9 +192,10 @@ export default function LoginForm() {
                     {/* Email/password login */}
                     <Button
                       type="submit"
+                      disabled={loading}
                       className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 rounded-full transition-all duration-300"
                     >
-                      {isLogin ? "SIGN IN" : "SIGN UP"}
+                      {loading ? "Please wait..." : isLogin ? "SIGN IN" : "SIGN UP"}
                     </Button>
 
                     {/* Google OAuth */}
