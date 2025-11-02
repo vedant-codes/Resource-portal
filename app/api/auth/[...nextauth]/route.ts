@@ -74,25 +74,27 @@ export const authOptions: NextAuthOptions = {
      * to block sign-ins if needed). Returning true allows sign-in to proceed.
      */
     async signIn({ user, account }: { user: User; account?: Account | null }) {
-      try {
-        // update lastLogin; safe even if using OAuth or credentials
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { lastLogin: new Date() },
-        });
-      } catch (err) {
-        // non-fatal: we don't block login for DB update issues, but you can handle differently
-        console.error("Failed to update lastLogin:", err);
-      }
+  console.log("🔍 SignIn callback - User ID:", user.id, "Provider:", account?.provider); // ← ADD THIS LINE
+  
+  try {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLogin: new Date() },
+    });
+  } catch (err) {
+    console.error("Failed to update lastLogin:", err);
+  }
 
-      return true;
-    },
+  return true;
+},
 
     /**
      * jwt callback: called when a JWT is created or updated.
      * We persist `provider` on the token when an account is present so session can expose it.
      */
     async jwt({ token, user, account }: { token: JWT; user?: User | undefined; account?: Account | null }) {
+      console.log("🧩 JWT callback:", { token, user, account });
+
       // On initial sign in, account will be present
       if (account) {
         // store provider (e.g. 'google' or 'credentials')
@@ -107,24 +109,17 @@ export const authOptions: NextAuthOptions = {
      * session callback: called when a session is checked/created.
      * We attach id and provider info to session.user for easy client access.
      */
-    async session({ session, token }: { session: Session; token: JWT }): Promise<Session> {
-      // token.sub contains user id
-      if (token.sub) {
-        session.user = {
-          ...session.user,
-          id: token.sub,
-        } as Session["user"];
-      }
+async session({ session, user }) {
+    console.log("⚙️ session() callback triggered (DB session mode)");
 
-      // attach provider if present on token
-      const provider = (token as any).provider as string | undefined;
-      if (provider) {
-        // Put provider into session.user.provider (extend your session type if using strict TS)
-        (session.user as any).provider = provider;
-      }
+    if (session?.user && user?.id) {
+      session.user.id = user.id;
+    }
 
-      return session;
-    },
+    console.log("🧩 Final session object:", session);
+    return session;
+  },
+
   },
 
   // recommended: secure secret
