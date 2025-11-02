@@ -101,46 +101,82 @@ export default function UploadPage() {
     }
   }, [])
 
-  const handleFiles = (files: FileList) => {
-    Array.from(files).forEach((file) => {
-      const newFile: UploadedFile = {
-        id: Math.random().toString(36).substr(2, 9),
-        file,
-        progress: 0,
-        status: "uploading",
-      }
+const handleFiles = (files: FileList) => {
+  Array.from(files).forEach((file) => {
+    const newFile: UploadedFile = {
+      id: Math.random().toString(36).substr(2, 9),
+      file,
+      progress: 0,
+      status: "uploading", // we set uploading because we will start uploading on submit; change to 'ready' if you prefer
+    };
 
-      setUploadedFiles((prev) => [...prev, newFile])
+    setUploadedFiles((prev) => [...prev, newFile]);
+  });
+};
 
-      // Simulate upload progress
-      const interval = setInterval(() => {
-        setUploadedFiles((prev) =>
-          prev.map((f) => {
-            if (f.id === newFile.id) {
-              const newProgress = Math.min(f.progress + Math.random() * 30, 100)
-              return {
-                ...f,
-                progress: newProgress,
-                status: newProgress === 100 ? "completed" : "uploading",
-              }
-            }
-            return f
-          }),
-        )
-      }, 500)
-
-      setTimeout(() => {
-        clearInterval(interval)
-        setUploadedFiles((prev) =>
-          prev.map((f) => (f.id === newFile.id ? { ...f, progress: 100, status: "completed" } : f)),
-        )
-      }, 3000)
-    })
-  }
 
   const removeFile = (id: string) => {
     setUploadedFiles((prev) => prev.filter((f) => f.id !== id))
   }
+
+  async function uploadSingleFile(u: UploadedFile, meta: {
+  title: string;
+  description: string;
+  subject: string;
+  semester: string;
+  faculty?: string;
+  tags?: string[];
+}) {
+  return new Promise<{ ok: boolean; json?: any }>((resolve) => {
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.onprogress = function (e) {
+      if (!e.lengthComputable) return;
+      const percent = Math.round((e.loaded / e.total) * 100);
+      setUploadedFiles((prev) =>
+        prev.map((f) => (f.id === u.id ? { ...f, progress: percent } : f))
+      );
+    };
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        let json = {};
+        try { json = JSON.parse(xhr.responseText); } catch {}
+        setUploadedFiles((prev) =>
+          prev.map((f) => (f.id === u.id ? { ...f, progress: 100, status: "completed" } : f))
+        );
+        resolve({ ok: true, json });
+      } else {
+        setUploadedFiles((prev) =>
+          prev.map((f) => (f.id === u.id ? { ...f, status: "error" } : f))
+        );
+        resolve({ ok: false, json: { error: xhr.statusText } });
+      }
+    };
+
+    xhr.onerror = function () {
+      setUploadedFiles((prev) =>
+        prev.map((f) => (f.id === u.id ? { ...f, status: "error" } : f))
+      );
+      resolve({ ok: false });
+    };
+
+    // Build form data
+    const fd = new FormData();
+    fd.append("file", u.file);
+    fd.append("title", meta.title || u.file.name);
+    fd.append("description", meta.description || "");
+    fd.append("subject", meta.subject || "");
+    fd.append("semester", meta.semester || "");
+    if (meta.faculty) fd.append("faculty", meta.faculty);
+    if (meta.tags && meta.tags.length) fd.append("tags", JSON.stringify(meta.tags));
+
+    xhr.withCredentials = true; // ✅ Send cookies (important!)
+    xhr.open("POST", "/api/upload");
+    xhr.send(fd);
+  });
+}
+
 
   const addTag = () => {
     if (currentTag.trim() && !tags.includes(currentTag.trim())) {
@@ -153,19 +189,43 @@ export default function UploadPage() {
     setTags((prev) => prev.filter((tag) => tag !== tagToRemove))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    // Handle form submission
-    console.log({
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!title || !description || !subject || !semester || uploadedFiles.length === 0) {
+    alert("Please fill required fields and add at least one file.");
+    return;
+  }
+
+  // Upload files sequentially (keeps load small) — you can make parallel if you want.
+  for (const u of uploadedFiles) {
+    // skip files already uploaded successfully
+    if (u.status === "completed") continue;
+
+    // call upload helper with metadata
+    const res = await uploadSingleFile(u, {
       title,
       description,
-      tags,
       subject,
       semester,
       faculty,
-      files: uploadedFiles,
-    })
+      tags,
+    });
+
+    if (!res.ok) {
+      alert(`Upload failed for ${u.file.name}. See console for details.`);
+      console.error("Upload failed for", u.file.name, res.json);
+      // decide whether to stop further uploads or continue; here we continue
+    } else {
+      console.log("Upload success:", res.json);
+      // optionally collect returned resource IDs & redirect later
+    }
   }
+
+  alert("All uploads attempted. Check status icons.");
+  // Optionally: redirect user to /my-space or resource list
+  // window.location.href = "/my-space";
+};
+
 
   return (
     <div className="flex h-screen bg-background">
