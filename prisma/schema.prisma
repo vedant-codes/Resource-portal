@@ -21,9 +21,12 @@ model User {
   accounts      Account[]
   sessions      Session[]
 
-  // <-- Add these back-relation fields so Prisma knows the other side of relations
+  // relations
   resources        Resource[]        @relation("UserResources")
   uploadedVersions ResourceVersion[] @relation("UserUploadedVersions")
+
+  // new: downloads made by this user (nullable userId allowed on Download)
+  downloads Download[] @relation("UserDownloads")
 }
 
 model Account {
@@ -66,15 +69,34 @@ model Resource {
   description  String?
   courseId     String? // optional link to a Course (add Course model later if needed)
   uploaderId   String
-  // name the relation "UserResources" to match the User.resources field above
   uploader     User              @relation("UserResources", fields: [uploaderId], references: [id], onDelete: Cascade)
   currentVerId String? // points to latest ResourceVersion.id (optional)
   versions     ResourceVersion[] @relation("ResourceVersions")
+  downloads    Int               @default(0) // counter
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
+  // new: relation for download records
+  downloadRecords Download[] @relation("ResourceDownloads")
+
   @@index([courseId])
   @@index([uploaderId])
+}
+
+model Download {
+  id         String   @id @default(cuid())
+  resourceId String
+  resource   Resource @relation("ResourceDownloads", fields: [resourceId], references: [id], onDelete: Cascade)
+
+  userId String? // null if anonymous
+  user   User?   @relation("UserDownloads", fields: [userId], references: [id], onDelete: Cascade)
+
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([resourceId])
+  @@index([userId])
 }
 
 model ResourceVersion {
