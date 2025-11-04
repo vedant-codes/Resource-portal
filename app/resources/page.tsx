@@ -1,46 +1,106 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Sidebar } from "@/components/sidebar" // Assuming you have these
-import { Header } from "@/components/header" // Assuming you have these
-import { cn } from "@/lib/utils"
+import { useEffect, useState } from "react";
+import { Sidebar } from "@/components/sidebar";
+import { Header } from "@/components/header";
+import { cn } from "@/lib/utils";
 
-// 1. Import your data and new components
-import { resources, subjects, semesters, fileTypes, Resource } from "@/app/resources/data"
-import { ResourceFilters } from "@/components/resources/ResourceFilters"
-import { ResourceGridCard } from "@/components/resources/ResourceGridCard"
-import { ResourceListCard } from "@/components/resources/ResourceListCard"
-import { ResourcePreviewModal } from "@/components/resources/ResourcePreviewModal"
+import { ResourceFilters } from "@/components/resources/ResourceFilters";
+import { ResourceGridCard } from "@/components/resources/ResourceGridCard";
+import { ResourceListCard } from "@/components/resources/ResourceListCard";
+import { ResourcePreviewModal } from "@/components/resources/ResourcePreviewModal";
+
+/**
+ * Local client-side resource type coming from API.
+ * id is string because DB ids / cuid from server are strings.
+ */
+type ResourceItem = {
+  id: string;
+  title: string;
+  description?: string | null;
+  subject?: string | null;
+  semester?: string | null;
+  faculty?: string | null;
+  type?: string | null;
+  size?: string | number | null;
+  downloads?: number;
+  rating?: number;
+  uploadedBy?: string | null;
+  timeAgo?: string | null;
+  tags?: string[] | null;
+  fileName?: string | null;
+  downloadUrl?: string | null;
+};
+
+const subjects = ["All Subjects", "Mathematics", "Physics", "Chemistry", "Computer Science", "Biology"];
+const semesters = ["All Semesters", "Semester 1", "Semester 2", "Semester 3", "Semester 4"];
+const fileTypes = ["All Types", "PDF", "DOCX", "PPT", "MP4", "ZIP"];
 
 export default function ResourcesPage() {
-  // 2. All state remains here in the parent component
-  const [isCollapsed, setIsCollapsed] = useState(false)
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
-  const [searchQuery, setSearchQuery] = useState("")
-  const [selectedSubject, setSelectedSubject] = useState("All Subjects")
-  const [selectedSemester, setSelectedSemester] = useState("All Semesters")
-  const [selectedFileType, setSelectedFileType] = useState("All Types")
-  const [userRatings, setUserRatings] = useState<Record<number, number>>({})
-  const [previewResource, setPreviewResource] = useState<Resource | null>(null)
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedSubject, setSelectedSubject] = useState("All Subjects");
+  const [selectedSemester, setSelectedSemester] = useState("All Semesters");
+  const [selectedFileType, setSelectedFileType] = useState("All Types");
 
-  // 3. All logic remains here
-  const handleRating = (resourceId: number, rating: number) => {
-    setUserRatings((prev) => ({ ...prev, [resourceId]: rating }))
-  }
+  // data + ui state (now loaded from /api/resources)
+  const [resources, setResources] = useState<ResourceItem[]>([]);
+  const [loadingResources, setLoadingResources] = useState(false);
+  const [errorResources, setErrorResources] = useState<string | null>(null);
 
+  // use string keys for ratings because resource.id is string
+  const [userRatings, setUserRatings] = useState<Record<string, number>>({});
+  const [previewResource, setPreviewResource] = useState<ResourceItem | null>(null);
+
+  // load resources from backend (single focused step)
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadResources() {
+      setLoadingResources(true);
+      setErrorResources(null);
+      try {
+        const res = await fetch("/api/resources");
+        const json = await res.json();
+        if (!res.ok || json?.ok === false) {
+          throw new Error(json?.error || `HTTP ${res.status}`);
+        }
+        // expect json.items to be ResourceItem[]
+        if (mounted) setResources(json.items || []);
+      } catch (err: any) {
+        console.error("Failed to fetch resources:", err);
+        if (mounted) setErrorResources(err.message || String(err));
+      } finally {
+        if (mounted) setLoadingResources(false);
+      }
+    }
+
+    loadResources();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleRating = (resourceId: string, rating: number) => {
+    setUserRatings((prev) => ({ ...prev, [resourceId]: rating }));
+  };
+
+  const q = searchQuery.trim().toLowerCase();
   const filteredResources = resources.filter((resource) => {
     const matchesSearch =
-      resource.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      resource.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      resource.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-    const matchesSubject = selectedSubject === "All Subjects" || resource.subject === selectedSubject
-    const matchesSemester = selectedSemester === "All Semesters" || resource.semester === selectedSemester
-    const matchesFileType = selectedFileType === "All Types" || resource.type === selectedFileType
+      !q ||
+      resource.title.toLowerCase().includes(q) ||
+      (resource.description ?? "").toLowerCase().includes(q) ||
+      (resource.tags ?? []).some((tag) => tag.toLowerCase().includes(q));
 
-    return matchesSearch && matchesSubject && matchesSemester && matchesFileType
-  })
+    const matchesSubject = selectedSubject === "All Subjects" || resource.subject === selectedSubject;
+    const matchesSemester = selectedSemester === "All Semesters" || resource.semester === selectedSemester;
+    const matchesFileType = selectedFileType === "All Types" || resource.type === selectedFileType;
 
-  // 4. The JSX is now simple, clean, and just passes props
+    return matchesSearch && matchesSubject && matchesSemester && matchesFileType;
+  });
+
   return (
     <div className="flex h-screen bg-background">
       <Sidebar isCollapsed={isCollapsed} onToggleCollapse={() => setIsCollapsed(!isCollapsed)} />
@@ -71,20 +131,27 @@ export default function ResourcesPage() {
             fileTypes={fileTypes}
           />
 
-          {/* Results */}
+          {/* Results / Loading / Error */}
           <div className="mb-4">
-            <p className="text-sm text-muted-foreground">
-              Showing {filteredResources.length} of {resources.length} resources
-            </p>
+            {loadingResources ? (
+              <p className="text-sm text-muted-foreground">Loading resources…</p>
+            ) : errorResources ? (
+              <p className="text-sm text-destructive">Failed to load: {errorResources}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Showing {filteredResources.length} of {resources.length} resources
+              </p>
+            )}
           </div>
 
           {/* Resources Grid/List */}
           {viewMode === "grid" ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredResources.map((resource) => (
+                // Cast to any to avoid type mismatch now; we'll align types next step
                 <ResourceGridCard
                   key={resource.id}
-                  resource={resource}
+                  resource={resource as any}
                   userRating={userRatings[resource.id] || 0}
                   onRate={(rating) => handleRating(resource.id, rating)}
                   onPreview={() => setPreviewResource(resource)}
@@ -96,7 +163,7 @@ export default function ResourcesPage() {
               {filteredResources.map((resource) => (
                 <ResourceListCard
                   key={resource.id}
-                  resource={resource}
+                  resource={resource as any}
                   userRating={userRatings[resource.id] || 0}
                   onRate={(rating) => handleRating(resource.id, rating)}
                   onPreview={() => setPreviewResource(resource)}
@@ -110,12 +177,12 @@ export default function ResourcesPage() {
       {/* Preview Modal Component */}
       {previewResource && (
         <ResourcePreviewModal
-          resource={previewResource}
+          resource={previewResource as any}
           userRating={userRatings[previewResource.id] || 0}
           onRate={(rating) => handleRating(previewResource.id, rating)}
           onClose={() => setPreviewResource(null)}
         />
       )}
     </div>
-  )
+  );
 }

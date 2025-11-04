@@ -1,3 +1,4 @@
+// components/resources/ResourcePreviewModal.tsx
 "use client"
 
 import { Button } from "@/components/ui/button"
@@ -6,6 +7,7 @@ import { Download, Star, Clock, User, X, FileText, Video, Archive } from "lucide
 import { cn } from "@/lib/utils"
 import { Resource } from "@/app/resources/data" // Adjust path as needed
 import { getFileIcon } from "@/app/resources/utils" // Adjust path as needed
+import { useState } from "react"
 
 type ResourcePreviewModalProps = {
   resource: Resource
@@ -14,9 +16,13 @@ type ResourcePreviewModalProps = {
   onClose: () => void
 }
 
-// This is the mock preview content, extracted for clarity
-function MockPreview({ type }: { type: string }) {
-  if (type === "PDF" || type === "DOCX") {
+/** Mock preview UI component (keeps presentational logic separate).
+ *  Accepts a possibly-unknown `type` (string | undefined) and renders fallback if missing.
+ */
+function MockPreview({ type }: { type?: string | null }) {
+  const t = type ?? "unknown"
+
+  if (t === "PDF" || t === "DOCX") {
     return (
       <div className="space-y-4 p-6">
         {[1, 2, 3].map((page) => (
@@ -26,7 +32,6 @@ function MockPreview({ type }: { type: string }) {
               <FileText className="h-4 w-4 text-muted-foreground" />
             </div>
             <div className="p-6 space-y-3">
-              {/* Mock content lines */}
               <div className="h-6 bg-gradient-to-r from-gray-300 to-gray-200 rounded w-3/4"></div>
               <div className="h-4 bg-gradient-to-r from-gray-200 to-gray-100 rounded w-full"></div>
               <div className="h-4 bg-gradient-to-r from-gray-200 to-gray-100 rounded w-5/6"></div>
@@ -40,7 +45,7 @@ function MockPreview({ type }: { type: string }) {
     )
   }
 
-  if (type === "PPT") {
+  if (t === "PPT") {
     return (
       <div className="space-y-4 p-6">
         <div className="grid grid-cols-2 gap-4">
@@ -60,7 +65,7 @@ function MockPreview({ type }: { type: string }) {
     )
   }
 
-  if (type === "MP4") {
+  if (t === "MP4") {
     return (
       <div className="bg-black aspect-video flex items-center justify-center relative">
         <Video className="h-20 w-20 text-white/40" />
@@ -73,7 +78,7 @@ function MockPreview({ type }: { type: string }) {
     )
   }
 
-  if (type === "ZIP") {
+  if (t === "ZIP") {
     return (
       <div className="p-12 text-center">
         <div className="flex flex-col items-center justify-center space-y-4">
@@ -84,12 +89,12 @@ function MockPreview({ type }: { type: string }) {
     )
   }
 
-  const FileIcon = getFileIcon(type)
+  const FileIcon = getFileIcon(t)
   return (
     <div className="p-12 text-center">
       <div className="flex flex-col items-center justify-center space-y-4">
         <FileIcon className="h-20 w-20 text-muted-foreground/40" />
-        <p className="text-lg font-medium text-muted-foreground mb-1">{type} Preview</p>
+        <p className="text-lg font-medium text-muted-foreground mb-1">{t} Preview</p>
         <p className="text-sm text-muted-foreground/60">Full preview available after download</p>
       </div>
     </div>
@@ -97,7 +102,53 @@ function MockPreview({ type }: { type: string }) {
 }
 
 export function ResourcePreviewModal({ resource, userRating, onRate, onClose }: ResourcePreviewModalProps) {
-  const FileIcon = getFileIcon(resource.type)
+  // FileIcon: pass a fallback string so getFileIcon never receives undefined
+  const FileIcon = getFileIcon(resource.type ?? "unknown")
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  // Safe download handler:
+  // 1) If resource.downloadUrl is present, open directly.
+  // 2) Else if filePath available, try calling backend API /api/resources/download?filePath=...
+  //    backend should return { ok: true, url } or { ok: false, error }.
+  // 3) Always guard against null/undefined.
+  const handleDownload = async () => {
+    const downloadUrl = resource.downloadUrl ?? null
+    const filePath = resource.filePath ?? null
+
+    if (downloadUrl) {
+      // resource already has a direct URL (signed or public)
+      window.open(downloadUrl, "_blank", "noopener,noreferrer")
+      return
+    }
+
+    if (!filePath) {
+      alert("Download not available for this resource.")
+      return
+    }
+
+    try {
+      setIsDownloading(true)
+      const res = await fetch(`/api/resources/download?filePath=${encodeURIComponent(filePath)}`)
+      const json = await res.json()
+      if (!res.ok || !json?.ok) {
+        console.error("Download API error:", json)
+        alert(json?.error || "Failed to get download link")
+        return
+      }
+      const url = json.url ?? json.signedUrl ?? json.signedURL ?? json.data?.publicUrl ?? null
+      if (!url) {
+        console.error("Download API returned no URL:", json)
+        alert("Download link missing from server response")
+        return
+      }
+      window.open(url, "_blank", "noopener,noreferrer")
+    } catch (err) {
+      console.error("Download failed:", err)
+      alert("Unexpected error while preparing download")
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -109,14 +160,14 @@ export function ResourcePreviewModal({ resource, userRating, onRate, onClose }: 
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                 <FileIcon className="h-5 w-5 text-primary" />
               </div>
-              <Badge variant="outline">{resource.type}</Badge>
+              <Badge variant="outline">{resource.type ?? "Unknown"}</Badge>
               <div className="flex items-center gap-1 text-sm">
                 <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                {resource.rating}
+                <span>{resource.rating ?? 0}</span>
               </div>
             </div>
-            <h2 className="text-2xl font-bold mb-1">{resource.title}</h2>
-            <p className="text-sm text-muted-foreground">{resource.description}</p>
+            <h2 className="text-2xl font-bold mb-1">{resource.title ?? "Untitled"}</h2>
+            <p className="text-sm text-muted-foreground">{resource.description ?? ""}</p>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0 hover:bg-destructive/10">
             <X className="h-5 w-5" />
@@ -128,7 +179,7 @@ export function ResourcePreviewModal({ resource, userRating, onRate, onClose }: 
           <div className="p-6">
             {/* Document Preview Area */}
             <div className="mb-6 rounded-xl border border-muted-foreground/20 bg-white overflow-hidden">
-              <MockPreview type={resource.type} />
+              <MockPreview type={resource.type ?? undefined} />
             </div>
 
             {/* Resource Details */}
@@ -136,37 +187,35 @@ export function ResourcePreviewModal({ resource, userRating, onRate, onClose }: 
               <div>
                 <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">Details</h3>
                 <div className="space-y-3">
-                  {/* Details content... */}
                   <div className="flex items-center justify-between py-2 border-b">
                     <span className="text-sm text-muted-foreground">Subject</span>
-                    <Badge variant="secondary">{resource.subject}</Badge>
+                    <Badge variant="secondary">{resource.subject ?? "—"}</Badge>
                   </div>
                   <div className="flex items-center justify-between py-2 border-b">
                     <span className="text-sm text-muted-foreground">Semester</span>
-                    <Badge variant="secondary">{resource.semester}</Badge>
+                    <Badge variant="secondary">{resource.semester ?? "—"}</Badge>
                   </div>
                   <div className="flex items-center justify-between py-2 border-b">
                     <span className="text-sm text-muted-foreground">Faculty</span>
-                    <span className="text-sm font-medium">{resource.faculty}</span>
+                    <span className="text-sm font-medium">{resource.faculty ?? "—"}</span>
                   </div>
                 </div>
               </div>
               <div>
                 <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">Statistics</h3>
                 <div className="space-y-3">
-                  {/* Statistics content... */}
                   <div className="flex items-center justify-between py-2 border-b">
                     <span className="text-sm text-muted-foreground">Downloads</span>
                     <div className="flex items-center gap-1">
                       <Download className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-medium">{resource.downloads}</span>
+                      <span className="text-sm font-medium">{resource.downloads ?? 0}</span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between py-2 border-b">
                     <span className="text-sm text-muted-foreground">Uploaded By</span>
                     <div className="flex items-center gap-1">
                       <User className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-medium">{resource.uploadedBy}</span>
+                      <span className="text-sm font-medium">{resource.uploadedBy ?? "Unknown"}</span>
                     </div>
                   </div>
                 </div>
@@ -177,7 +226,7 @@ export function ResourcePreviewModal({ resource, userRating, onRate, onClose }: 
             <div className="mb-6">
               <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">Tags</h3>
               <div className="flex flex-wrap gap-2">
-                {resource.tags.map((tag) => (
+                {(resource.tags ?? []).map((tag) => (
                   <Badge key={tag} variant="outline" className="text-sm">
                     {tag}
                   </Badge>
@@ -187,23 +236,19 @@ export function ResourcePreviewModal({ resource, userRating, onRate, onClose }: 
 
             {/* Rating Section */}
             <div className="mb-6 p-4 bg-muted/30 rounded-lg">
-              <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
-                Rate this resource
-              </h3>
+              <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">Rate this resource</h3>
               <div className="flex items-center gap-2">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button key={star} onClick={() => onRate(star)} className="transition-all hover:scale-125">
                     <Star
                       className={cn(
                         "h-8 w-8",
-                        star <= userRating ? "fill-yellow-400 text-yellow-400" : "text-gray-300 hover:text-yellow-400",
+                        star <= (userRating ?? 0) ? "fill-yellow-400 text-yellow-400" : "text-gray-300 hover:text-yellow-400"
                       )}
                     />
                   </button>
                 ))}
-                {userRating > 0 && (
-                  <span className="ml-2 text-sm text-muted-foreground">You rated: {userRating}/5</span>
-                )}
+                {(userRating ?? 0) > 0 && <span className="ml-2 text-sm text-muted-foreground">You rated: {userRating}/5</span>}
               </div>
             </div>
           </div>
@@ -214,12 +259,13 @@ export function ResourcePreviewModal({ resource, userRating, onRate, onClose }: 
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button>
+          <Button onClick={handleDownload} disabled={isDownloading}>
             <Download className="h-4 w-4 mr-2" />
-            Download Resource
+            {isDownloading ? "Preparing..." : "Download Resource"}
           </Button>
         </div>
       </div>
     </div>
   )
 }
+export default ResourcePreviewModal

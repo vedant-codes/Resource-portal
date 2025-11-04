@@ -15,31 +15,31 @@ type ResourceListCardProps = {
   onPreview: () => void;
 };
 
+// reuse same cache as grid card (module-scoped)
+const downloadCache = new Map<number, string>();
+
 export function ResourceListCard({ resource, userRating, onRate, onPreview }: ResourceListCardProps) {
-  const FileIcon = getFileIcon(resource.type);
+  const FileIcon = getFileIcon(resource.type ?? "");
 
-  const handleDownload = () => {
-    const url = resource.downloadUrl ?? null;
-    if (!url) {
-      alert("Download not available right now. Try refreshing the page.");
-      return;
-    }
+// snippet for both ResourceGridCard and ResourceListCard
+// put this inside the component, near other handlers
+const handleDownload = (resource: any) => {
+  console.log("download clicked for", resource);
 
-    try {
-      window.open(url, "_blank", "noopener,noreferrer");
+  if (resource.downloadUrl) {
+    const link = document.createElement("a");
+    link.href = resource.downloadUrl;
+    link.download = resource.title || "resource"; // suggest file name
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } else {
+    console.error("No download URL found for resource", resource);
+  }
+};
 
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = resource.fileName ?? resource.title ?? "resource";
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (err) {
-      console.error("Download failed:", err);
-      alert("Failed to start download. Open the link in a new tab or try again.");
-    }
-  };
+
+
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -55,13 +55,13 @@ export function ResourceListCard({ resource, userRating, onRate, onPreview }: Re
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1 text-sm text-muted-foreground">
                   <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                  {resource.rating}
+                  {resource.rating ?? "-"}
                 </div>
                 <Badge variant="outline">{resource.type}</Badge>
               </div>
             </div>
 
-            <p className="text-muted-foreground mb-3">{resource.description}</p>
+            <p className="text-muted-foreground mb-3">{resource.description ?? ""}</p>
 
             <div className="flex flex-wrap gap-2 mb-3">
               <Badge variant="secondary">{resource.subject}</Badge>
@@ -92,7 +92,7 @@ export function ResourceListCard({ resource, userRating, onRate, onPreview }: Re
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1">
                   <Download className="h-4 w-4" />
-                  {resource.downloads} downloads
+                  {resource.downloads ?? 0} downloads
                 </div>
                 <div className="flex items-center gap-1">
                   <User className="h-4 w-4" />
@@ -102,7 +102,7 @@ export function ResourceListCard({ resource, userRating, onRate, onPreview }: Re
                   <Clock className="h-4 w-4" />
                   {resource.timeAgo}
                 </div>
-                <span>{resource.size}</span>
+                <span>{resource.size ?? ""}</span>
               </div>
 
               <div className="flex gap-2">
@@ -110,10 +110,18 @@ export function ResourceListCard({ resource, userRating, onRate, onPreview }: Re
                   <Eye className="h-4 w-4 mr-1" />
                   Preview
                 </Button>
-                <Button size="sm" onClick={handleDownload}>
-                  <Download className="h-4 w-4 mr-1" />
-                  Download
-                </Button>
+                {/* Primary download button (calls handler) */}
+<Button size="sm" onClick={handleDownload}>
+  <Download className="h-4 w-4" />
+</Button>
+
+{/* Visible fallback link for debugging / manual download (shows only when url exists) */}
+{resource.downloadUrl ? (
+  <a href={`/api/resources/download?id=${encodeURIComponent(resource.id)}`} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs underline">
+  Open in new tab
+</a>
+) : null}
+
               </div>
             </div>
           </div>

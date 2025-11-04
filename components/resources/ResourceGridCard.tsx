@@ -15,41 +15,66 @@ type ResourceGridCardProps = {
   onPreview: () => void;
 };
 
+// simple in-memory cache for signed/public urls so repeated clicks don't re-request
+const downloadCache = new Map<number, string>();
+
 export function ResourceGridCard({
   resource,
   userRating,
   onRate,
   onPreview,
 }: ResourceGridCardProps) {
-  const FileIcon = getFileIcon(resource.type);
+  const FileIcon = getFileIcon(resource.type ?? "");
 
-  // Small helper: open signed URL in new tab and attempt to trigger download
-  const handleDownload = async () => {
-    const url = resource.downloadUrl ?? null;
-    if (!url) {
-      // fallback UX: tell user to refresh or contact admin
-      alert("Download not available right now. Try refreshing the page.");
-      return;
+// snippet for both ResourceGridCard and ResourceListCard
+// put this inside the component, near other handlers
+// utils: safe filename builder
+function safeFileName(name?: string) {
+  if (!name) return "resource";
+  return name.replace(/[/\\?%*:|"<>]/g, "_");
+}
+
+// in ResourceGridCard / ResourceListCard
+const handleDownload = async (resource: Resource) => {
+  console.log("download clicked for", resource);
+  const url = resource.downloadUrl;
+  if (!url) {
+    alert("Download not available right now.");
+    return;
+  }
+
+  try {
+    // Optional: show some UI loading state here
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`Download failed: ${resp.status} ${resp.statusText}`);
     }
 
-    try {
-      // open in new tab
-      window.open(url, "_blank", "noopener,noreferrer");
+    const blob = await resp.blob();
+    // Derive filename: prefer version.fileName then resource.title
+    const filename = safeFileName(resource.version?.fileName ?? resource.title ?? "resource");
 
-      // Also attempt programmatic download (some browsers will block cross-origin downloads, but it's ok)
-      const a = document.createElement("a");
-      a.href = url;
-      // filename fallback
-      a.download = resource.fileName ?? resource.title ?? "resource";
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (err) {
-      console.error("Download failed:", err);
-      alert("Failed to start download. Open the link in a new tab or try again.");
-    }
-  };
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    // append to DOM to make click work on all browsers
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // cleanup
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+  } catch (err) {
+    console.error("Download error:", err);
+    alert("Failed to download file. Check console for details.");
+  } finally {
+    // hide loading state
+  }
+};
+
+
+
+
 
   return (
     <Card className="group hover:shadow-lg transition-all duration-300 hover:scale-105">
@@ -64,13 +89,13 @@ export function ResourceGridCard({
           </div>
           <div className="flex items-center gap-1 text-sm text-muted-foreground">
             <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-            {resource.rating}
+            {resource.rating ?? "-"}
           </div>
         </div>
 
         <h3 className="font-semibold mb-2 line-clamp-2">{resource.title}</h3>
         <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-          {resource.description}
+          {resource.description ?? ""}
         </p>
 
         <div className="space-y-2 mb-4">
@@ -106,7 +131,7 @@ export function ResourceGridCard({
             <Download className="h-4 w-4" />
             {resource.downloads ?? 0}
           </div>
-          <span>{resource.size}</span>
+          <span>{resource.size ?? ""}</span>
         </div>
 
         <div className="flex items-center justify-between">
@@ -118,9 +143,21 @@ export function ResourceGridCard({
             <Button size="sm" variant="ghost" onClick={onPreview}>
               <Eye className="h-4 w-4" />
             </Button>
-            <Button size="sm" onClick={handleDownload}>
-              <Download className="h-4 w-4" />
-            </Button>
+            {/* Primary download button (calls handler) */}
+<Button
+  variant="outline"
+  onClick={() => handleDownload(resource)}
+>
+  Download
+</Button>
+
+{/* Visible fallback link for debugging / manual download (shows only when url exists) */}
+{resource.downloadUrl ? (
+  <a href={`/api/resources/download?id=${encodeURIComponent(resource.id)}`} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs underline">
+  Open in new tab
+</a>
+) : null}
+
           </div>
         </div>
       </CardContent>
