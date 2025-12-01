@@ -24,9 +24,12 @@ model User {
   // relations
   resources        Resource[]        @relation("UserResources")
   uploadedVersions ResourceVersion[] @relation("UserUploadedVersions")
-
-  // new: downloads made by this user (nullable userId allowed on Download)
-  downloads Download[] @relation("UserDownloads")
+  downloads        Download[]        @relation("UserDownloads")
+  
+  // marketplace relations
+  marketplaceItems MarketplaceItem[] @relation("SellerItems")
+  likedItems       MarketplaceLike[] @relation("UserLikes")
+  comments         MarketplaceComment[] @relation("UserComments")
 }
 
 model Account {
@@ -67,17 +70,15 @@ model Resource {
   id           String            @id @default(cuid())
   title        String
   description  String?
-  courseId     String? // optional link to a Course (add Course model later if needed)
+  courseId     String?
   uploaderId   String
   uploader     User              @relation("UserResources", fields: [uploaderId], references: [id], onDelete: Cascade)
-  currentVerId String? // points to latest ResourceVersion.id (optional)
+  currentVerId String?
   versions     ResourceVersion[] @relation("ResourceVersions")
-  downloads    Int               @default(0) // counter
+  downloads    Int               @default(0)
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
-
-  // new: relation for download records
-  downloadRecords Download[] @relation("ResourceDownloads")
+  downloadRecords Download[]     @relation("ResourceDownloads")
 
   @@index([courseId])
   @@index([uploaderId])
@@ -87,13 +88,11 @@ model Download {
   id         String   @id @default(cuid())
   resourceId String
   resource   Resource @relation("ResourceDownloads", fields: [resourceId], references: [id], onDelete: Cascade)
-
-  userId String? // null if anonymous
-  user   User?   @relation("UserDownloads", fields: [userId], references: [id], onDelete: Cascade)
-
-  ip        String?
-  userAgent String?
-  createdAt DateTime @default(now())
+  userId     String?
+  user       User?    @relation("UserDownloads", fields: [userId], references: [id], onDelete: Cascade)
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
 
   @@index([resourceId])
   @@index([userId])
@@ -103,16 +102,69 @@ model ResourceVersion {
   id         String   @id @default(cuid())
   resourceId String
   resource   Resource @relation("ResourceVersions", fields: [resourceId], references: [id], onDelete: Cascade)
-  filePath   String // path in storage (e.g. "resources/<resourceId>/v1/filename.pdf")
+  filePath   String
   fileName   String
   mimeType   String
   size       Int
   uploaderId String
-  // name the relation "UserUploadedVersions" to match User.uploadedVersions
   uploader   User     @relation("UserUploadedVersions", fields: [uploaderId], references: [id], onDelete: Cascade)
   version    Int
   createdAt  DateTime @default(now())
 
   @@index([resourceId])
   @@index([uploaderId])
+}
+
+// Marketplace Models
+model MarketplaceItem {
+  id            String               @id @default(cuid())
+  title         String
+  description   String
+  price         Float
+  originalPrice Float?
+  category      String
+  condition     String
+  sellerId      String
+  seller        User                 @relation("SellerItems", fields: [sellerId], references: [id], onDelete: Cascade)
+  location      String
+  images        String[]             @default([])
+  tags          String[]             @default([])
+  status        String               @default("active") // active, sold, removed
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  
+  likes         MarketplaceLike[]    @relation("ItemLikes")
+  comments      MarketplaceComment[] @relation("ItemComments")
+
+  @@index([sellerId])
+  @@index([category])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model MarketplaceLike {
+  id        String          @id @default(cuid())
+  itemId    String
+  item      MarketplaceItem @relation("ItemLikes", fields: [itemId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User            @relation("UserLikes", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+
+  @@unique([itemId, userId])
+  @@index([itemId])
+  @@index([userId])
+}
+
+model MarketplaceComment {
+  id        String          @id @default(cuid())
+  itemId    String
+  item      MarketplaceItem @relation("ItemComments", fields: [itemId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User            @relation("UserComments", fields: [userId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([itemId])
+  @@index([userId])
 }
