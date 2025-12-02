@@ -25,11 +25,17 @@ model User {
   resources        Resource[]        @relation("UserResources")
   uploadedVersions ResourceVersion[] @relation("UserUploadedVersions")
   downloads        Download[]        @relation("UserDownloads")
-  
-  // marketplace relations
-  marketplaceItems MarketplaceItem[] @relation("SellerItems")
-  likedItems       MarketplaceLike[] @relation("UserLikes")
-  comments         MarketplaceComment[] @relation("UserComments")
+
+  // Marketplace relations
+  sellerItems MarketplaceItem[]    @relation("SellerItems")
+  likes       MarketplaceLike[]    @relation("UserLikes")
+  comments    MarketplaceComment[] @relation("UserComments")
+
+  // Request relations
+  requests            Request[]            @relation("UserRequests")
+  requestUpvotes      RequestUpvote[]      @relation("UserRequestUpvotes")
+  requestComments     RequestComment[]     @relation("UserRequestComments")
+  requestFulfillments RequestFulfillment[] @relation("UserFulfillments")
 }
 
 model Account {
@@ -67,18 +73,24 @@ model VerificationToken {
 }
 
 model Resource {
-  id           String            @id @default(cuid())
-  title        String
-  description  String?
-  courseId     String?
-  uploaderId   String
-  uploader     User              @relation("UserResources", fields: [uploaderId], references: [id], onDelete: Cascade)
-  currentVerId String?
-  versions     ResourceVersion[] @relation("ResourceVersions")
-  downloads    Int               @default(0)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-  downloadRecords Download[]     @relation("ResourceDownloads")
+  id              String            @id @default(cuid())
+  title           String
+  description     String?
+  courseId        String?
+  uploaderId      String
+  uploader        User              @relation("UserResources", fields: [uploaderId], references: [id], onDelete: Cascade)
+  currentVerId    String?
+  versions        ResourceVersion[] @relation("ResourceVersions")
+  downloads       Int               @default(0)
+  subject         String?
+  semester        String?
+  faculty         String?
+  fileName        String?
+  type            String?
+  downloadUrl     String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  downloadRecords Download[]        @relation("ResourceDownloads")
 
   @@index([courseId])
   @@index([uploaderId])
@@ -129,10 +141,9 @@ model MarketplaceItem {
   location      String
   images        String[]             @default([])
   tags          String[]             @default([])
-  status        String               @default("active") // active, sold, removed
+  status        String               @default("active")
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
-  
   likes         MarketplaceLike[]    @relation("ItemLikes")
   comments      MarketplaceComment[] @relation("ItemComments")
 
@@ -166,5 +177,74 @@ model MarketplaceComment {
   updatedAt DateTime        @updatedAt
 
   @@index([itemId])
+  @@index([userId])
+}
+
+// Request Models
+model Request {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  subject     String
+  semester    String?
+  courseCode  String?
+  requesterId String
+  requester   User     @relation("UserRequests", fields: [requesterId], references: [id], onDelete: Cascade)
+  status      String   @default("open") // open, in-progress, fulfilled, closed
+  priority    String   @default("medium") // low, medium, high
+  tags        String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  upvotes      RequestUpvote[]      @relation("RequestUpvotes")
+  comments     RequestComment[]     @relation("RequestComments")
+  fulfillments RequestFulfillment[] @relation("RequestFulfillments")
+
+  @@index([requesterId])
+  @@index([status])
+  @@index([subject])
+  @@index([createdAt])
+}
+
+model RequestUpvote {
+  id        String   @id @default(cuid())
+  requestId String
+  request   Request  @relation("RequestUpvotes", fields: [requestId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("UserRequestUpvotes", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([requestId, userId])
+  @@index([requestId])
+  @@index([userId])
+}
+
+model RequestComment {
+  id        String   @id @default(cuid())
+  requestId String
+  request   Request  @relation("RequestComments", fields: [requestId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("UserRequestComments", fields: [userId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([requestId])
+  @@index([userId])
+}
+
+model RequestFulfillment {
+  id         String   @id @default(cuid())
+  requestId  String
+  request    Request  @relation("RequestFulfillments", fields: [requestId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation("UserFulfillments", fields: [userId], references: [id], onDelete: Cascade)
+  resourceId String? // optional link to uploaded resource
+  message    String?
+  status     String   @default("pending") // pending, accepted, rejected
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([requestId])
   @@index([userId])
 }

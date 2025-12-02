@@ -1,110 +1,68 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Sidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
-import { ArrowUp, Clock, Plus, Search, MessageSquare, CheckCircle, AlertCircle } from "lucide-react"
+import {
+  ArrowUp,
+  Clock,
+  Plus,
+  Search,
+  MessageSquare,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+} from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useSession } from "next-auth/react"
+import { useToast } from "@/hooks/use-toast"
+import { NewRequestDialog } from "@/components/requests/NewRequestDialog"
+import { RequestCommentsDialog } from "@/components/requests/RequestCommentDialog"
 
-const requests = [
-  {
-    id: 1,
-    title: "Advanced Machine Learning Notes - CS 6780",
-    description:
-      "Looking for comprehensive notes covering neural networks, deep learning, and reinforcement learning from Professor Anderson's class.",
-    subject: "Computer Science",
-    semester: "Semester 6",
-    requestedBy: "Sarah Chen",
-    timeAgo: "2 hours ago",
-    upvotes: 23,
-    comments: 5,
-    status: "open",
-    priority: "high",
-    tags: ["machine-learning", "neural-networks", "deep-learning"],
-  },
-  {
-    id: 2,
-    title: "Organic Chemistry Lab Manual - CHEM 3410",
-    description:
-      "Need the complete lab manual with procedures and safety guidelines for organic chemistry experiments.",
-    subject: "Chemistry",
-    semester: "Semester 4",
-    requestedBy: "Mike Johnson",
-    timeAgo: "5 hours ago",
-    upvotes: 18,
-    comments: 3,
-    status: "open",
-    priority: "medium",
-    tags: ["organic-chemistry", "lab-manual", "experiments"],
-  },
-  {
-    id: 3,
-    title: "Linear Algebra Problem Sets with Solutions",
-    description:
-      "Looking for practice problems and detailed solutions for eigenvalues, eigenvectors, and matrix operations.",
-    subject: "Mathematics",
-    semester: "Semester 3",
-    requestedBy: "Emma Davis",
-    timeAgo: "1 day ago",
-    upvotes: 31,
-    comments: 8,
-    status: "fulfilled",
-    priority: "medium",
-    tags: ["linear-algebra", "problem-sets", "solutions"],
-  },
-  {
-    id: 4,
-    title: "Physics Simulation Software Tutorial",
-    description: "Need tutorials or guides for using MATLAB/Simulink for physics simulations and modeling.",
-    subject: "Physics",
-    semester: "Semester 5",
-    requestedBy: "Alex Kumar",
-    timeAgo: "2 days ago",
-    upvotes: 15,
-    comments: 12,
-    status: "in-progress",
-    priority: "low",
-    tags: ["physics", "simulation", "matlab", "tutorial"],
-  },
-  {
-    id: 5,
-    title: "Database Design Project Examples",
-    description: "Looking for sample database design projects with ER diagrams and SQL implementations for reference.",
-    subject: "Computer Science",
-    semester: "Semester 4",
-    requestedBy: "Lisa Wang",
-    timeAgo: "3 days ago",
-    upvotes: 27,
-    comments: 6,
-    status: "open",
-    priority: "high",
-    tags: ["database", "sql", "er-diagrams", "projects"],
-  },
-  {
-    id: 6,
-    title: "Anatomy Atlas with High-Resolution Images",
-    description:
-      "Need detailed anatomical diagrams and images for human anatomy course, especially cardiovascular system.",
-    subject: "Biology",
-    semester: "Semester 2",
-    requestedBy: "Tom Rodriguez",
-    timeAgo: "1 week ago",
-    upvotes: 12,
-    comments: 4,
-    status: "open",
-    priority: "medium",
-    tags: ["anatomy", "biology", "cardiovascular", "diagrams"],
-  },
+interface Request {
+  id: string
+  title: string
+  description: string
+  subject: string
+  semester: string | null
+  courseCode: string | null
+  status: string
+  priority: string
+  tags: string[]
+  createdAt: string
+  requester: {
+    id: string
+    name: string | null
+    image: string | null
+  }
+  _count: {
+    upvotes: number
+    comments: number
+    fulfillments: number
+  }
+  upvotes: Array<{ userId: string }>
+}
+
+interface Stats {
+  total: number
+  fulfilled: number
+  inProgress: number
+  open: number
+  fulfillmentRate: number
+}
+
+const subjects = ["All Subjects", "Computer Science", "Mathematics", "Physics", "Chemistry", "Biology", "Engineering"]
+const statuses = ["All Status", "open", "in-progress", "fulfilled", "closed"]
+const sortOptions = [
+  { value: "recent", label: "Most Recent" },
+  { value: "upvoted", label: "Most Upvoted" },
+  { value: "commented", label: "Most Commented" },
 ]
-
-const subjects = ["All Subjects", "Computer Science", "Mathematics", "Physics", "Chemistry", "Biology"]
-const statuses = ["All Status", "open", "in-progress", "fulfilled"]
-const sortOptions = ["Most Recent", "Most Upvoted", "Most Commented"]
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -114,6 +72,8 @@ const getStatusColor = (status: string) => {
       return "bg-yellow-500/10 text-yellow-600 border-yellow-200"
     case "fulfilled":
       return "bg-green-500/10 text-green-600 border-green-200"
+    case "closed":
+      return "bg-gray-500/10 text-gray-600 border-gray-200"
     default:
       return "bg-gray-500/10 text-gray-600 border-gray-200"
   }
@@ -143,35 +103,146 @@ const getStatusIcon = (status: string) => {
   }
 }
 
+const getTimeAgo = (dateString: string) => {
+  const date = new Date(dateString)
+  const now = new Date()
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+  if (seconds < 60) return "just now"
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} hour${hours > 1 ? "s" : ""} ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} day${days > 1 ? "s" : ""} ago`
+  const weeks = Math.floor(days / 7)
+  if (weeks < 4) return `${weeks} week${weeks > 1 ? "s" : ""} ago`
+  const months = Math.floor(days / 30)
+  return `${months} month${months > 1 ? "s" : ""} ago`
+}
+
 export default function RequestsPage() {
+  const { data: session } = useSession()
+  const { toast } = useToast()
+  const [requests, setRequests] = useState<Request[]>([])
+  const [stats, setStats] = useState<Stats | null>(null)
+  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedSubject, setSelectedSubject] = useState("All Subjects")
   const [selectedStatus, setSelectedStatus] = useState("All Status")
-  const [sortBy, setSortBy] = useState("Most Recent")
-  const [upvotedRequests, setUpvotedRequests] = useState<Set<number>>(new Set())
+  const [sortBy, setSortBy] = useState("recent")
+  const [isNewRequestOpen, setIsNewRequestOpen] = useState(false)
+  const [selectedRequestForComments, setSelectedRequestForComments] = useState<string | null>(null)
 
-  const handleUpvote = (requestId: number) => {
-    setUpvotedRequests((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(requestId)) {
-        newSet.delete(requestId)
-      } else {
-        newSet.add(requestId)
-      }
-      return newSet
-    })
+  const fetchRequests = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (selectedSubject !== "All Subjects") params.append("subject", selectedSubject)
+      if (selectedStatus !== "All Status") params.append("status", selectedStatus)
+      if (searchQuery) params.append("search", searchQuery)
+      params.append("sortBy", sortBy)
+
+      const response = await fetch(`/api/requests?${params.toString()}`)
+      if (!response.ok) throw new Error("Failed to fetch requests")
+      const data = await response.json()
+      setRequests(data)
+    } catch (error) {
+      console.error("Error fetching requests:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load requests",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const filteredRequests = requests.filter((request) => {
-    const matchesSearch =
-      request.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      request.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      request.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-    const matchesSubject = selectedSubject === "All Subjects" || request.subject === selectedSubject
-    const matchesStatus = selectedStatus === "All Status" || request.status === selectedStatus
+  const fetchStats = async () => {
+    try {
+      const response = await fetch("/api/requests/stats")
+      if (!response.ok) throw new Error("Failed to fetch stats")
+      const data = await response.json()
+      setStats(data)
+    } catch (error) {
+      console.error("Error fetching stats:", error)
+    }
+  }
 
-    return matchesSearch && matchesSubject && matchesStatus
-  })
+  useEffect(() => {
+    fetchRequests()
+    fetchStats()
+  }, [selectedSubject, selectedStatus, searchQuery, sortBy])
+
+  const handleUpvote = async (requestId: string) => {
+    if (!session) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to upvote requests",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/requests/${requestId}/upvote`, {
+        method: "POST",
+      })
+
+      if (!response.ok) throw new Error("Failed to toggle upvote")
+
+      // Refresh requests to get updated counts
+      fetchRequests()
+    } catch (error) {
+      console.error("Error toggling upvote:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update upvote",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleNewRequest = async (data: any) => {
+    try {
+      const response = await fetch("/api/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+
+      if (!response.ok) throw new Error("Failed to create request")
+
+      toast({
+        title: "Success",
+        description: "Request created successfully",
+      })
+
+      setIsNewRequestOpen(false)
+      fetchRequests()
+      fetchStats()
+    } catch (error) {
+      console.error("Error creating request:", error)
+      toast({
+        title: "Error",
+        description: "Failed to create request",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const isRequestUpvoted = (request: Request) => {
+    if (!session?.user?.id) return false
+    return request.upvotes.some((upvote) => upvote.userId === session.user.id)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-screen bg-background">
@@ -186,7 +257,20 @@ export default function RequestsPage() {
               <h1 className="text-3xl font-bold font-serif mb-2">Resource Requests</h1>
               <p className="text-muted-foreground">Request specific resources or help fulfill others' requests</p>
             </div>
-            <Button className="bg-accent hover:bg-accent/90">
+            <Button
+              className="bg-accent hover:bg-accent/90"
+              onClick={() => {
+                if (!session) {
+                  toast({
+                    title: "Authentication required",
+                    description: "Please sign in to create requests",
+                    variant: "destructive",
+                  })
+                  return
+                }
+                setIsNewRequestOpen(true)
+              }}
+            >
               <Plus className="h-4 w-4 mr-2" />
               New Request
             </Button>
@@ -241,8 +325,8 @@ export default function RequestsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {sortOptions.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -252,16 +336,14 @@ export default function RequestsPage() {
 
           {/* Results */}
           <div className="mb-4">
-            <p className="text-sm text-muted-foreground">
-              Showing {filteredRequests.length} of {requests.length} requests
-            </p>
+            <p className="text-sm text-muted-foreground">Showing {requests.length} requests</p>
           </div>
 
           {/* Requests List */}
           <div className="space-y-6">
-            {filteredRequests.map((request) => {
+            {requests.map((request) => {
               const StatusIcon = getStatusIcon(request.status)
-              const isUpvoted = upvotedRequests.has(request.id)
+              const isUpvoted = isRequestUpvoted(request)
 
               return (
                 <Card key={request.id} className="hover:shadow-lg transition-shadow">
@@ -277,7 +359,7 @@ export default function RequestsPage() {
                         >
                           <ArrowUp className="h-4 w-4" />
                         </Button>
-                        <span className="text-sm font-semibold">{request.upvotes + (isUpvoted ? 1 : 0)}</span>
+                        <span className="text-sm font-semibold">{request._count.upvotes}</span>
                       </div>
 
                       {/* Content */}
@@ -300,7 +382,8 @@ export default function RequestsPage() {
 
                         <div className="flex flex-wrap gap-2 mb-4">
                           <Badge variant="secondary">{request.subject}</Badge>
-                          <Badge variant="secondary">{request.semester}</Badge>
+                          {request.semester && <Badge variant="secondary">{request.semester}</Badge>}
+                          {request.courseCode && <Badge variant="secondary">{request.courseCode}</Badge>}
                           {request.tags.map((tag) => (
                             <Badge key={tag} variant="outline" className="text-xs">
                               {tag}
@@ -312,34 +395,36 @@ export default function RequestsPage() {
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
                             <div className="flex items-center gap-2">
                               <Avatar className="h-6 w-6">
-                                <AvatarImage
-                                  src={`/abstract-geometric-shapes.png?height=24&width=24&query=${request.requestedBy}`}
-                                />
+                                <AvatarImage src={request.requester.image || undefined} />
                                 <AvatarFallback className="text-xs">
-                                  {request.requestedBy
-                                    .split(" ")
+                                  {request.requester.name
+                                    ?.split(" ")
                                     .map((n) => n[0])
-                                    .join("")}
+                                    .join("") || "U"}
                                 </AvatarFallback>
                               </Avatar>
-                              <span>{request.requestedBy}</span>
+                              <span>{request.requester.name || "Anonymous"}</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <Clock className="h-4 w-4" />
-                              {request.timeAgo}
+                              {getTimeAgo(request.createdAt)}
                             </div>
                             <div className="flex items-center gap-1">
                               <MessageSquare className="h-4 w-4" />
-                              {request.comments} comments
+                              {request._count.comments} comments
                             </div>
                           </div>
 
                           <div className="flex gap-2">
-                            <Button variant="outline" size="sm">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSelectedRequestForComments(request.id)}
+                            >
                               <MessageSquare className="h-4 w-4 mr-1" />
                               Comment
                             </Button>
-                            {request.status === "open" && (
+                            {request.status === "open" && session && (
                               <Button size="sm" className="bg-accent hover:bg-accent/90">
                                 Help Fulfill
                               </Button>
@@ -355,49 +440,65 @@ export default function RequestsPage() {
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-8">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Total Requests</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">247</div>
-                <p className="text-xs text-muted-foreground">+12 this week</p>
-              </CardContent>
-            </Card>
+          {stats && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-8">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Total Requests</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats.total}</div>
+                  <p className="text-xs text-muted-foreground">All time</p>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Fulfilled</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-green-600">189</div>
-                <p className="text-xs text-muted-foreground">76% success rate</p>
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Fulfilled</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-600">{stats.fulfilled}</div>
+                  <p className="text-xs text-muted-foreground">{stats.fulfillmentRate}% success rate</p>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">In Progress</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-yellow-600">34</div>
-                <p className="text-xs text-muted-foreground">Being worked on</p>
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">In Progress</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-yellow-600">{stats.inProgress}</div>
+                  <p className="text-xs text-muted-foreground">Being worked on</p>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Open</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-blue-600">24</div>
-                <p className="text-xs text-muted-foreground">Need attention</p>
-              </CardContent>
-            </Card>
-          </div>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Open</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-blue-600">{stats.open}</div>
+                  <p className="text-xs text-muted-foreground">Need attention</p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </main>
       </div>
+
+      <NewRequestDialog
+        open={isNewRequestOpen}
+        onOpenChange={setIsNewRequestOpen}
+        onSubmit={handleNewRequest}
+      />
+
+      {selectedRequestForComments && (
+        <RequestCommentsDialog
+          requestId={selectedRequestForComments}
+          open={!!selectedRequestForComments}
+          onOpenChange={(open) => !open && setSelectedRequestForComments(null)}
+        />
+      )}
     </div>
   )
 }
